@@ -31,6 +31,7 @@ type lockerDetail struct {
 	duration time.Duration
 	keyname  string
 	lock     sync.Mutex
+	ref      int
 }
 
 type lockInfo struct {
@@ -178,12 +179,14 @@ func (a *App) getRes(key string, timeout time.Duration) *lockerDetail {
 
 	v, ok := a.lockstore[key]
 	if ok {
+		v.ref++
 		return v
 	} else {
 
 		res := &lockerDetail{
 			duration: time.Duration(timeout) * time.Second,
 			keyname:  key,
+			ref:      1,
 		}
 		a.lockstore[key] = res
 		return res
@@ -264,7 +267,10 @@ func (a *App) Unlock(id uint64) error {
 	}
 	a.locksMutex.Lock()
 	for _, key := range l.names {
-		delete(a.lockstore, key)
+		a.lockstore[key].ref--
+		if a.lockstore[key].ref <= 0 {
+			delete(a.lockstore, key)
+		}
 	}
 	a.locksMutex.Unlock()
 	return nil
