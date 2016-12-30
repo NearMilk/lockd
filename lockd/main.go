@@ -30,10 +30,10 @@ func main() {
 			w.Write(buf)
 			return
 		case "POST", "PUT":
-			names := r.FormValue("names")
-			if names == "" {
+			key := r.FormValue("key")
+			if key == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("empty lock names"))
+				w.Write([]byte("empty lock key"))
 				return
 			}
 
@@ -43,7 +43,7 @@ func main() {
 				timeout = 60
 			}
 
-			res, err := a.Lock(time.Duration(timeout)*time.Second, names)
+			res, err := a.Lock(time.Duration(timeout)*time.Second, key)
 			if err != nil && err != errLockTimeout {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte(err.Error()))

@@ -1,7 +1,6 @@
 package lockd_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -9,22 +8,18 @@ import (
 	"github.com/teambition/lockd"
 )
 
-func Testlockd(t *testing.T) {
-	t.Run("lockd", func(t *testing.T) {
-		idinfo := make(chan uint64, 1)
-		errs := make(chan error, 1)
+func TestLockd(t *testing.T) {
+	t.Run("lockd with string", func(t *testing.T) {
 
 		timeout := 5
-		names := strings.Split("a,b,c", ",")
+		names := "abc"
 		a := assert.New(t)
 		locker := lockd.NewApp()
-		go func() {
-			locker.LockTimeout(idinfo, errs, time.Duration(timeout)*time.Second, names)
-		}()
 
-		id := <-idinfo
-		a.NotEmpty(id)
-		a.Empty(errs)
+		res, err := locker.Lock(time.Duration(timeout)*time.Second, names)
+		a.Empty(err)
+		a.NotEmpty(res)
 
 	})
+
 }
