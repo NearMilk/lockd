@@ -8,7 +8,6 @@ import (
 	"net"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -20,52 +19,34 @@ var errLockTimeout = errors.New("lock timeout")
 type App struct {
 	m            sync.Mutex
 	httpListener net.Listener
-	//	keyLockerGroup *keyLockerGroup
-	locks         map[uint64]*lockInfo
-	lockstore     map[string]*lockerDetail
-	lockIDCounter uint32
-	locksMutex    sync.Mutex
-	locksMutex2   sync.Mutex
+
+	lockstore map[string]*lockerDetail
+
+	locksMutex  sync.Mutex
+	locksMutex2 sync.Mutex
 }
 type lockerDetail struct {
-	duration time.Duration
-	keyname  string
-	lock     sync.Mutex
-	ref      int
-}
-
-type lockInfo struct {
-	id         uint64
-	names      []string
+	keyname    string
+	lock       sync.Mutex
+	ref        int
 	createTime time.Time
 }
-type lockInfos []*lockInfo
 
-// type keyLockerGroup struct {
-// 	set []*refLockSet
-// }
+type lockstores []*lockerDetail
 
 //NewApp is ...
 func NewApp() *App {
 	a := new(App)
-	a.locks = make(map[uint64]*lockInfo, 1024)
+
 	a.lockstore = make(map[string]*lockerDetail)
 	return a
 }
 
-// genLockID will gen the lockid
-func (a *App) genLockID() uint64 {
-	//todo, optimize later
-	id := uint64(time.Now().Unix())
-	c := uint64(atomic.AddUint32(&a.lockIDCounter, 1))
-	return id<<32 | c
-}
-
 //NewLocker is ..
-func NewLocker(id uint64, names []string) *lockInfo {
-	l := new(lockInfo)
-	l.id = id
-	l.names = names
+func NewLocker(names string) *lockerDetail {
+	l := new(lockerDetail)
+
+	l.keyname = names
 	l.createTime = time.Now()
 	return l
 }
@@ -73,42 +54,52 @@ func NewLocker(id uint64, names []string) *lockInfo {
 //GetLockInfos is ...
 func (a *App) GetLockInfos() []byte {
 	var buf bytes.Buffer
-	keyLocks := make(lockInfos, 0, 1024)
+	keyLocks := make(lockstores, 0, 1024)
 	a.locksMutex.Lock()
-	for _, l := range a.locks {
+	for _, l := range a.lockstore {
 		keyLocks = append(keyLocks, l)
 	}
 	a.locksMutex.Unlock()
-	//sort.Sort(keyLocks)
+
 	buf.WriteString("key lock:\n")
 	for _, l := range keyLocks {
-		buf.WriteString(fmt.Sprintf("%d %v\t%s\n", l.id, l.names, l.createTime.Format(timeFormat)))
+		buf.WriteString(fmt.Sprintf("%s %v\t\n", l.keyname, l.createTime.Format(timeFormat)))
 	}
 	return buf.Bytes()
 
 }
 
-func removeDuplicatedItems(keys ...string) []string {
-	if len(keys) <= 1 {
-		return keys
-	}
+// Lock is...
+func (a *App) Lock(timeout time.Duration, names string) (string, error) {
 
-	m := make(map[string]struct{}, len(keys))
+	idinfo := make(chan string, 1)
+	errs := make(chan error, 1)
+	//chmsg := make(chan string, 1)
+	go func() {
+		a.LockTimeout(idinfo, errs, timeout, names)
+	}()
+	select {
+	//for broadcast
+	// case <-chmsg:
+	// 	w.WriteHeader(http.StatusOK)
+	// 	w.Write([]byte("aaaaa"))
+	// 	return
+	case id := <-idinfo:
 
-	p := make([]string, 0, len(keys))
-	for _, key := range keys {
-		if _, ok := m[key]; !ok {
-			m[key] = struct{}{}
-			p = append(p, key)
+		return id, nil
+	case err := <-errs:
+
+		if err != nil && err != errLockTimeout {
+			return "", err
+		} else if err == errLockTimeout {
+			return "", errLockTimeout
 		}
-
 	}
-
-	return p
+	return "", nil
 }
 
 //LockTimeout is ...
-func (a *App) LockTimeout(idinfo chan uint64, errs chan error, timeout time.Duration, names []string) {
+func (a *App) LockTimeout(idinfo chan string, errs chan error, timeout time.Duration, names string) {
 	var (
 		ctx context.Context
 		//cancel context.CancelFunc
@@ -116,80 +107,66 @@ func (a *App) LockTimeout(idinfo chan uint64, errs chan error, timeout time.Dura
 
 	ctx, _ = context.WithTimeout(context.Background(), timeout)
 
-	goon := a.checkItem(names...)
+	goon := a.checkItem(names)
 	if goon {
 		fmt.Println("wrong input")
 
 		errs <- fmt.Errorf("the input keys have the key locked and unlock at the same time")
 		return
 	}
-	lockdone1 := make(chan bool, 1)
 
-	waitover1 := make(chan bool, 1)
-	a.getItem(ctx, lockdone1, waitover1, timeout, names...)
+	res := a.getItem(ctx, timeout, names)
 
-	select {
-	case <-lockdone1:
-		id := a.genLockID()
-		l := NewLocker(id, names)
+	if res {
 		a.locksMutex2.Lock()
-		a.locks[id] = l
+		a.lockstore[names].createTime = time.Now()
+		a.lockstore[names].keyname = names
 		a.locksMutex2.Unlock()
-		fmt.Println(id)
-		idinfo <- id
+		idinfo <- names
 		select {
 		case <-ctx.Done():
-			a.Unlock(id)
+			a.UnlockKey(names)
 		}
-
-	case <-waitover1:
+	} else {
 		errs <- errLockTimeout
-
 	}
 
 }
-
-func (a *App) getItem(ctx context.Context, lockdone1 chan bool, waitover1 chan bool, timeout time.Duration, names ...string) {
+func (a *App) getItem(ctx context.Context, timeout time.Duration, names string) bool {
 
 	ctx, _ = context.WithTimeout(ctx, timeout)
-	for _, key := range names {
-		//fmt.Println(key)
 
-		a.getRes(key, timeout)
-		//the channel get the lock is sucessfully get or not
-		lockdone := make(chan bool, 1)
+	a.getRes(names, timeout)
+	//the channel get the lock is sucessfully get or not
+	lockdone := make(chan bool, 1)
 
-		waitover := make(chan bool, 1)
+	waitover := make(chan bool, 1)
 
-		go a.LockWitchTimer(ctx, key, lockdone, waitover, timeout)
-		select {
-		case <-lockdone:
+	go a.LockWitchTimer(ctx, names, lockdone, waitover, timeout)
+	select {
+	case <-lockdone:
+		return true
+	case <-waitover:
 
-		case <-waitover:
-			waitover1 <- true
-			return
-		}
-
+		return false
 	}
 
-	lockdone1 <- true
 }
 
-func (a *App) getRes(key string, timeout time.Duration) *lockerDetail {
+func (a *App) getRes(key string, timeout time.Duration) {
 
 	v, ok := a.lockstore[key]
 	if ok {
 		v.ref++
-		return v
-	} else {
 
+	} else {
 		res := &lockerDetail{
-			duration: time.Duration(timeout) * time.Second,
-			keyname:  key,
-			ref:      1,
+
+			keyname: key,
+			ref:     1,
 		}
 		a.lockstore[key] = res
-		return res
+
 	}
 
 }
@@ -197,7 +174,7 @@ func (a *App) getRes(key string, timeout time.Duration) *lockerDetail {
 //LockWitchTimer is ...
 func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool, waitover chan bool, timeout time.Duration) {
 	done := make(chan bool, 1)
-	//	res := a.getRes(key, timeout)
+
 	go func() {
 		a.locksMutex2.Lock()
 		val := a.lockstore[key]
@@ -210,11 +187,11 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 
 	select {
 	case <-ctx.Done():
-		fmt.Println("yoyoyo")
+
 		waitover <- false
 
 	case <-done:
-		fmt.Println("accccc")
+
 		lockdone <- true
 
 	}
@@ -225,8 +202,7 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 func (a *App) checkItem(names ...string) bool {
 	var unlockcount int
 	var lockcount int
-	//remove duplicated items
-	names = removeDuplicatedItems(names...)
+
 	sort.Strings(names)
 
 	a.locksMutex.Lock()
@@ -251,27 +227,22 @@ func (a *App) checkItem(names ...string) bool {
 
 }
 
-//Unlock is ...
-func (a *App) Unlock(id uint64) error {
-	if id == 0 {
+//UnlockKey is ...
+func (a *App) UnlockKey(key string) error {
+	if key == "" {
 		return fmt.Errorf("empty lock names")
 	}
-	a.locksMutex.Lock()
-	l, _ := a.locks[id]
-	delete(a.locks, id)
-	a.locksMutex.Unlock()
 
-	keys := removeDuplicatedItems(l.names...)
-	for _, key := range keys {
-		a.lockstore[key].lock.Unlock()
-	}
+	fmt.Println("baba", a.lockstore[key].ref)
+	a.lockstore[key].lock.Unlock()
+
 	a.locksMutex.Lock()
-	for _, key := range l.names {
-		a.lockstore[key].ref--
-		if a.lockstore[key].ref <= 0 {
-			delete(a.lockstore, key)
-		}
+
+	a.lockstore[key].ref--
+	if a.lockstore[key].ref <= 0 {
+		delete(a.lockstore, key)
 	}
+
 	a.locksMutex.Unlock()
 	return nil
 

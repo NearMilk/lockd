@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/teambition/lockd"
@@ -31,8 +30,8 @@ func main() {
 			w.Write(buf)
 			return
 		case "POST", "PUT":
-			names := strings.Split(r.FormValue("names"), ",")
-			if len(names) == 0 {
+			names := r.FormValue("names")
+			if names == "" {
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("empty lock names"))
 				return
@@ -44,43 +43,26 @@ func main() {
 				timeout = 60
 			}
 
-			idinfo := make(chan uint64, 1)
-			errs := make(chan error, 1)
-			chmsg := make(chan string, 1)
-			go func() {
-				a.LockTimeout(idinfo, errs, time.Duration(timeout)*time.Second, names)
-			}()
-
-			select {
-			//for broadcast
-			case <-chmsg:
+			res, err := a.Lock(time.Duration(timeout)*time.Second, names)
+			if err != nil && err != errLockTimeout {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(err.Error()))
+			} else if err == errLockTimeout {
+				w.WriteHeader(http.StatusRequestTimeout)
+				w.Write([]byte("Lock timeout"))
+			} else {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("aaaaa"))
-				return
-			case id := <-idinfo:
-
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(strconv.FormatUint(id, 10)))
-			case err := <-errs:
-
-				if err != nil && err != errLockTimeout {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(err.Error()))
-				} else if err == errLockTimeout {
-					w.WriteHeader(http.StatusRequestTimeout)
-					w.Write([]byte("Lock timeout"))
-				}
+				w.Write([]byte(res))
 			}
 
 		case "DELETE":
-			id, err := strconv.ParseUint(r.FormValue("id"), 10, 64)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
-				return
+			names := r.FormValue("names")
+
+			if names == "" {
+				fmt.Println("aas")
 			}
 
-			err = a.Unlock(id)
+			err := a.UnlockKey(names)
 
 			if err != nil {
 				w.WriteHeader(http.StatusBadRequest)
