@@ -33,7 +33,7 @@ func main() {
 			key := r.FormValue("key")
 			if key == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("empty lock key"))
+				w.Write([]byte("empty lock key\n"))
 				return
 			}
 
@@ -49,27 +49,30 @@ func main() {
 				w.Write([]byte(err.Error()))
 			} else if err == errLockTimeout {
 				w.WriteHeader(http.StatusRequestTimeout)
-				w.Write([]byte("Lock timeout"))
+				w.Write([]byte("Lock timeout\n"))
 			} else {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(res))
 			}
 
 		case "DELETE":
-			names := r.FormValue("names")
+			key := r.FormValue("key")
 
-			if names == "" {
-				fmt.Println("aas")
-			}
-
-			err := a.UnlockKey(names)
-
-			if err != nil {
+			if key == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte(err.Error()))
+				w.Write([]byte("The key is empty,pls enter the key\n"))
+
 			} else {
-				w.WriteHeader(http.StatusOK)
+
+				err := a.UnlockKey(key)
+				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte(err.Error()))
+				} else {
+					w.WriteHeader(http.StatusOK)
+				}
 			}
+
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return

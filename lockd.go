@@ -12,7 +12,7 @@ import (
 
 const timeFormat string = "2006-01-02 15:04:05"
 
-var errLockTimeout = errors.New("lock timeout")
+var errLockTimeout = errors.New("lock timeout\n")
 
 //App is ...
 type App struct {
@@ -30,6 +30,7 @@ type lockerDetail struct {
 	ref        int
 	createTime time.Time
 	workers    []*worker //prepare for broadcast
+	lock2      sync.Mutex
 }
 
 //prepare for broadcast
@@ -76,12 +77,21 @@ func (a *App) GetLockInfos() []byte {
 
 // Lock is...
 func (a *App) Lock(timeout time.Duration, key string) (string, error) {
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
+
+	ctx, cancel = context.WithTimeout(context.Background(), timeout)
 	a.getRes(key, timeout)
 	idinfo := make(chan string, 1)
 	errs := make(chan error, 1)
+	a.locksMutex.Lock()
+	num := len(a.lockstore[key].workers) - 1
 
+	a.locksMutex.Unlock()
 	go func() {
-		a.LockTimeout(idinfo, errs, timeout, key)
+		a.LockTimeout(ctx, idinfo, errs, timeout, key)
 	}()
 	select {
 
@@ -96,23 +106,19 @@ func (a *App) Lock(timeout time.Duration, key string) (string, error) {
 			return "", errLockTimeout
 		}
 		return "", err
-		// case <-a.lockstore[key].workers[0].source:
-		// 	newerr := fmt.Errorf("bilibili")
+	case <-a.lockstore[key].workers[num].source:
 
-		// 	return "", newerr
+		newerr := fmt.Errorf("bilibili\n")
+
+		cancel()
+		return "", newerr
 
 	}
 
 }
 
 //LockTimeout is ...
-func (a *App) LockTimeout(idinfo chan string, errs chan error, timeout time.Duration, key string) {
-	var (
-		ctx context.Context
-		//cancel context.CancelFunc
-	)
-
-	ctx, _ = context.WithTimeout(context.Background(), timeout)
+func (a *App) LockTimeout(ctx context.Context, idinfo chan string, errs chan error, timeout time.Duration, key string) {
 
 	res := a.getItem(ctx, timeout, key)
 
@@ -124,9 +130,14 @@ func (a *App) LockTimeout(idinfo chan string, errs chan error, timeout time.Dura
 		idinfo <- key
 		select {
 		case <-ctx.Done():
-			fmt.Println("shashasha")
 
-			a.UnlockKey(key)
+			_, ok := a.lockstore[key]
+			if ok {
+				go func() { a.UnlockKey(key) }()
+			} else {
+				return
+			}
+
 		}
 	} else {
 		errs <- errLockTimeout
@@ -154,8 +165,8 @@ func (a *App) getItem(ctx context.Context, timeout time.Duration, key string) bo
 
 func (a *App) getRes(key string, timeout time.Duration) {
 
-	w := &worker{}                    //prepare for broadcast
-	w.source = make(chan interface{}) //prepare for broadcast
+	w := &worker{}                          //prepare for broadcast
+	w.source = make(chan interface{}, 1024) //prepare for broadcast
 
 	v, ok := a.lockstore[key]
 	if ok {
@@ -193,10 +204,9 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 	select {
 	case <-ctx.Done():
 		a.locksMutex2.Lock()
-		a.lockstore[key].ref--
-		fmt.Println(a.lockstore[key].ref)
-		waitover <- false
+
 		a.locksMutex2.Unlock()
+		waitover <- false
 
 	case <-done:
 
@@ -207,23 +217,49 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 }
 
 //UnlockKey is ...
+// func (a *App) UnlockKey(key string) error {
+// 	if key == "" {
+// 		return fmt.Errorf("empty lock key")
+// 	}
+
+// 	fmt.Println("Unlock", key)
+// 	a.lockstore[key].lock.Unlock()
+
+// 	a.locksMutex.Lock()
+
+// 	//a.lockstore[key].ref--
+
+// 	if a.lockstore[key].ref <= 0 {
+// 		delete(a.lockstore, key)
+
+// 	}
+
+// 	a.locksMutex.Unlock()
+// 	return nil
+
+// }
+
+//UnlockKey is ...
 func (a *App) UnlockKey(key string) error {
+
 	if key == "" {
-		return fmt.Errorf("empty lock key")
+		return fmt.Errorf("The key is empty!\n")
+	}
+	_, ok := a.lockstore[key]
+	if ok {
+
+		defer delete(a.lockstore, key)
+
+		for kl := range a.lockstore[key].workers {
+
+			a.lockstore[key].workers[kl].source <- 1
+			a.lockstore[key].ref--
+
+		}
+	} else {
+		return fmt.Errorf("The key does not exist\n")
 	}
 
-	fmt.Println("Unlock", key)
-	a.lockstore[key].lock.Unlock()
-
-	a.locksMutex.Lock()
-
-	a.lockstore[key].ref--
-	fmt.Println("me", a.lockstore[key].ref)
-	if a.lockstore[key].ref <= 0 {
-		delete(a.lockstore, key)
-	}
-
-	a.locksMutex.Unlock()
 	return nil
 
 }
