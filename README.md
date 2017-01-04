@@ -25,6 +25,7 @@ go run lockd/main.go
  - 支持请求自定义超时时间
  - 支持http协议
  - 锁释放后的广播
+ 
 ### Todo
  - Redis协议接口的支持
  - live reload 热升级机制
