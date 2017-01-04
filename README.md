@@ -25,8 +25,7 @@ curl -d "key=aaaaaaa&timeout=10" http://127.0.0.1:14000/lock
 ```
 
 
-## Usage
-
+## Unlock key
 ```sh
 curl -X DELETE http://127.0.0.1:14000/lock?key=aaaaaaa
 ```
