@@ -217,29 +217,6 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 }
 
 //UnlockKey is ...
-// func (a *App) UnlockKey(key string) error {
-// 	if key == "" {
-// 		return fmt.Errorf("empty lock key")
-// 	}
-
-// 	fmt.Println("Unlock", key)
-// 	a.lockstore[key].lock.Unlock()
-
-// 	a.locksMutex.Lock()
-
-// 	//a.lockstore[key].ref--
-
-// 	if a.lockstore[key].ref <= 0 {
-// 		delete(a.lockstore, key)
-
-// 	}
-
-// 	a.locksMutex.Unlock()
-// 	return nil
-
-// }
-
-//UnlockKey is ...
 func (a *App) UnlockKey(key string) error {
 
 	if key == "" {
