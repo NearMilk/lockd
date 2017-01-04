@@ -1,7 +1,7 @@
 # lockd
 [![Build Status](https://travis-ci.org/teambition/lockd.svg?branch=master)](https://travis-ci.org/teambition/lockd)
 
-An HTTP content negotiator for Go
+lock service for distributed system.
 
 ## Installation
 
