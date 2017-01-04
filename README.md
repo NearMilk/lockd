@@ -18,6 +18,19 @@ API documentation can be found here:
 go run lockd/main.go 
 ```
 
+## Lock key
+
+```sh
+curl -d "key=aaaaaaa&timeout=10" http://127.0.0.1:14000/lock 
+```
+
+
+## Usage
+
+```sh
+curl -X DELETE http://127.0.0.1:14000/lock?key=aaaaaaa
+```
+
 
 ### Done
  - 当多个客户端请求同一个锁（job，简单字符串描述），或者同一个客户端对同一个锁发起多个请求时，
