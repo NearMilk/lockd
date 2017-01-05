@@ -64,12 +64,14 @@ func main() {
 
 			} else {
 
-				err := a.UnlockKey(key)
+				res, err := a.UnlockKey(key)
 				if err != nil {
 					w.WriteHeader(http.StatusBadRequest)
 					w.Write([]byte(err.Error()))
 				} else {
 					w.WriteHeader(http.StatusOK)
+					//	rs := "Unlock key: " + key + "done"
+					w.Write([]byte(res))
 				}
 			}
 

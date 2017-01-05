@@ -23,6 +23,7 @@ type App struct {
 
 	locksMutex  sync.Mutex
 	locksMutex2 sync.Mutex
+	locksMutex3 sync.RWMutex
 }
 type lockerDetail struct {
 	keyname    string
@@ -86,10 +87,10 @@ func (a *App) Lock(timeout time.Duration, key string) (string, error) {
 	a.getRes(key, timeout)
 	idinfo := make(chan string, 1)
 	errs := make(chan error, 1)
-	a.locksMutex.Lock()
+	a.locksMutex2.Lock()
 	num := len(a.lockstore[key].workers) - 1
-
-	a.locksMutex.Unlock()
+	mysource := a.lockstore[key].workers[num].source
+	a.locksMutex2.Unlock()
 	go func() {
 		a.LockTimeout(ctx, idinfo, errs, timeout, key)
 	}()
@@ -106,7 +107,7 @@ func (a *App) Lock(timeout time.Duration, key string) (string, error) {
 			return "", errLockTimeout
 		}
 		return "", err
-	case <-a.lockstore[key].workers[num].source:
+	case <-mysource:
 
 		newerr := fmt.Errorf("bilibili\n")
 
@@ -130,8 +131,9 @@ func (a *App) LockTimeout(ctx context.Context, idinfo chan string, errs chan err
 		idinfo <- key
 		select {
 		case <-ctx.Done():
-
+			a.locksMutex2.Lock()
 			_, ok := a.lockstore[key]
+			a.locksMutex2.Unlock()
 			if ok {
 				go func() { a.UnlockKey(key) }()
 			} else {
@@ -168,7 +170,9 @@ func (a *App) getRes(key string, timeout time.Duration) {
 	w := &worker{}                          //prepare for broadcast
 	w.source = make(chan interface{}, 1024) //prepare for broadcast
 
+	a.locksMutex2.Lock()
 	v, ok := a.lockstore[key]
+
 	if ok {
 		v.ref++
 		//v.workers = append(v.workers, myworker)
@@ -184,6 +188,7 @@ func (a *App) getRes(key string, timeout time.Duration) {
 		a.lockstore[key].workers = append(a.lockstore[key].workers, w) //prepare for broadcast
 
 	}
+	a.locksMutex2.Unlock()
 
 }
 
@@ -203,9 +208,7 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 
 	select {
 	case <-ctx.Done():
-		a.locksMutex2.Lock()
 
-		a.locksMutex2.Unlock()
 		waitover <- false
 
 	case <-done:
@@ -217,12 +220,15 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 }
 
 //UnlockKey is ...
-func (a *App) UnlockKey(key string) error {
-
+func (a *App) UnlockKey(key string) (string, error) {
+	a.locksMutex2.Lock()
+	defer a.locksMutex2.Unlock()
 	if key == "" {
-		return fmt.Errorf("The key is empty!\n")
+		return "", fmt.Errorf("The key is empty!")
 	}
+
 	_, ok := a.lockstore[key]
+
 	if ok {
 
 		defer delete(a.lockstore, key)
@@ -233,10 +239,11 @@ func (a *App) UnlockKey(key string) error {
 			a.lockstore[key].ref--
 
 		}
+
 	} else {
-		return fmt.Errorf("The key does not exist\n")
+		return "", fmt.Errorf("The key does not exist\n")
 	}
 
-	return nil
+	return "Unlock key: " + key + " ok", nil
 
 }
