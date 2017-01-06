@@ -13,23 +13,24 @@ import (
 func TestLockd(t *testing.T) {
 	t.Run("lockd with string", func(t *testing.T) {
 
-		timeout := 1
+		timeout := 1000
 		names := "ab"
 		a := assert.New(t)
 		locker := lockd.NewApp()
 
-		res, err := locker.Lock(time.Duration(timeout)*time.Second, names)
+		res, err := locker.Lock(time.Duration(timeout)*time.Microsecond, names)
+
 		a.Empty(err)
 		a.NotEmpty(res)
 
 	})
 	t.Run("lockd with remove key", func(t *testing.T) {
-		timeout := 1
+		timeout := 1000
 		names := "abc"
 		a := assert.New(t)
 		locker := lockd.NewApp()
 
-		res, err := locker.Lock(time.Duration(timeout)*time.Second, names)
+		res, err := locker.Lock(time.Duration(timeout)*time.Microsecond, names)
 		a.Empty(err)
 		a.NotEmpty(res)
 
@@ -40,24 +41,24 @@ func TestLockd(t *testing.T) {
 	})
 
 	t.Run("lockd with big goroutine ", func(t *testing.T) {
-		timeout := 1
-		names := "abcd"
+		timeout := 1000
+		names := "jabdf"
 		a := assert.New(t)
 		locker := lockd.NewApp()
 		var wg sync.WaitGroup
 		wg.Add(1000)
 		for i := 0; i < 1000; i++ {
-
+			newi := strconv.Itoa(i)
+			newname := names + newi
 			go func() {
-				newi := strconv.Itoa(i)
-				newname := names + newi
 
-				locker.Lock(time.Duration(timeout)*time.Second, newname)
+				locker.Lock(time.Duration(timeout)*time.Microsecond, newname)
 				wg.Done()
 			}()
+
 		}
 		wg.Wait()
-		res, err := locker.Lock(time.Duration(timeout)*time.Second, "dsafafsafs")
+		res, err := locker.Lock(time.Duration(timeout)*time.Microsecond, "dsafafsafs")
 		a.Empty(err)
 
 		a.Equal("dsafafsafs", res)
