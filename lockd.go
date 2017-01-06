@@ -12,7 +12,7 @@ import (
 
 const timeFormat string = "2006-01-02 15:04:05"
 
-var errLockTimeout = errors.New("lock timeout\n")
+var errLockTimeout = errors.New("lock timeout")
 
 //App is ...
 type App struct {
@@ -49,8 +49,8 @@ func NewApp() *App {
 	return a
 }
 
-//NewLocker is ..
-func NewLocker(key string) *lockerDetail {
+//newLocker is ..
+func newLocker(key string) *lockerDetail {
 	l := new(lockerDetail)
 
 	l.keyname = key
@@ -109,7 +109,7 @@ func (a *App) Lock(timeout time.Duration, key string) (string, error) {
 		return "", err
 	case <-mysource:
 
-		newerr := fmt.Errorf("bilibili\n")
+		newerr := fmt.Errorf("bilibili")
 
 		cancel()
 		return "", newerr
@@ -202,7 +202,6 @@ func (a *App) LockWitchTimer(ctx context.Context, key string, lockdone chan bool
 		a.locksMutex2.Unlock()
 
 		val.lock.Lock()
-
 		done <- true
 	}()
 
@@ -224,7 +223,8 @@ func (a *App) UnlockKey(key string) (string, error) {
 	a.locksMutex2.Lock()
 	defer a.locksMutex2.Unlock()
 	if key == "" {
-		return "", fmt.Errorf("The key is empty!")
+
+		return "", fmt.Errorf("The key is empty")
 	}
 
 	_, ok := a.lockstore[key]
@@ -241,7 +241,7 @@ func (a *App) UnlockKey(key string) (string, error) {
 		}
 
 	} else {
-		return "", fmt.Errorf("The key does not exist\n")
+		return "", fmt.Errorf("The key does not exist")
 	}
 
 	return "Unlock key: " + key + " ok", nil
